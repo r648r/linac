@@ -1,0 +1,12 @@
+# Ignore the output directory
+/output
+
+# Ignore test scripts
+test.sh
+
+# Ignore any local environment files
+.env
+
+# Ignore IDE/editor specific files
+.vscode/
+.idea/

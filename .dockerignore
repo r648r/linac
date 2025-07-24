@@ -1,0 +1,14 @@
+# Ignore the .git directory
+.git
+.gitignore
+
+# Ignore the Dockerfile itself
+Dockerfile
+.dockerignore
+
+# Ignore any local environment files
+.env
+
+# Ignore IDE/editor specific files
+.vscode/
+.idea/
