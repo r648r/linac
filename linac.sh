@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
 
+# Reset
+RESET='\033[0m'                # Text Reset
+
+# Regular Colors
+BLACK='\033[0;30m'             # Black
+RED='\033[0;31m'               # Red
+GREEN='\033[0;32m'             # Green
+YELLOW='\033[0;33m'            # Yellow
+BLUE='\033[0;34m'              # Blue
+PINK='\033[0;35m'              # Pink
+CYAN='\033[0;36m'              # Cyan
+WHITE='\033[0;37m'             # White
+
 # Vérification des commandes nécessaires
 _linac_check_commands() {
 	if ! command -v ldapsearch &> /dev/null; then
