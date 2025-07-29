@@ -1,6 +1,6 @@
 # LINAC — Comptes Active Directory inactifs
 
-[🇬🇧 English](README.md) · 🇫🇷 **Français**
+[English](README.md) · **Français**
 
 > CLI pour repérer les comptes Active Directory inactifs via LDAP — hygiène des
 > comptes et réduction de la surface d'attaque. Bash pur, aucune dépendance

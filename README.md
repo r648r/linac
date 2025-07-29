@@ -1,6 +1,6 @@
 # LINAC — LDAP Inactive Accounts
 
-🇬🇧 **English** · [🇫🇷 Français](README.fr.md)
+**English** · [Français](README.fr.md)
 
 > CLI to flag inactive Active Directory accounts over LDAP — account hygiene
 > and attack-surface reduction. Pure Bash, no dependency beyond `ldapsearch`.
