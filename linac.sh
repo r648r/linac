@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# linac.sh - Script pour l'analyse des utilisateurs LDAP inactifs
+# linac.sh - List inactive LDAP/AD user accounts
 RESET='\033[0m'                # Text Reset
 BLACK='\033[0;30m'             # Black
 RED='\033[0;31m'               # Red
@@ -11,7 +11,7 @@ PINK='\033[0;35m'              # Pink
 CYAN='\033[0;36m'              # Cyan
 WHITE='\033[0;37m'             # White
 
-# Détection de l'OS
+# OS detection
 _linac_detect_os() {
 	if [[ "$OSTYPE" == "darwin"* ]]; then
 		echo "macos"
@@ -22,41 +22,41 @@ _linac_detect_os() {
 	fi
 }
 
-# Vérification des commandes nécessaires selon l'OS
+# Check required commands per OS
 _linac_check_commands() {
 	local os="$1"
 	
 	if ! command -v ldapsearch &> /dev/null; then
-		printf '❌ Erreur: La commande '\''ldapsearch'\'' n'\''est pas installée.\n' >&2
+		printf '❌ Error: '\''ldapsearch'\'' is not installed.\n' >&2
 		if [[ "$os" == "macos" ]]; then
-			printf 'Pour l'\''installer sur macOS, utilisez:\n' >&2
+			printf 'To install on macOS, run:\n' >&2
 			printf 'brew install openldap\n' >&2
 		else
-			printf 'Pour l'\''installer sur Linux, utilisez:\n' >&2
+			printf 'To install on Linux, run:\n' >&2
 			printf 'apt update && apt install ldap-utils\n' >&2
-			printf 'ou sur RedHat/CentOS:\n' >&2
+			printf 'or on RedHat/CentOS:\n' >&2
 			printf 'yum install openldap-clients\n' >&2
 		fi
 		return 1
 	fi
 
 	if [[ "$os" == "macos" ]] && ! command -v pbcopy &> /dev/null; then
-		printf '❌ Erreur: La commande '\''pbcopy'\'' n'\''est pas disponible.\n' >&2
-		printf 'Cette commande est normalement disponible sur macOS par défaut.\n' >&2
-		printf 'Si elle n'\''est pas disponible, installez les outils de développement Xcode:\n' >&2
+		printf '❌ Error: '\''pbcopy'\'' is not available.\n' >&2
+		printf 'This command is normally available on macOS by default.\n' >&2
+		printf 'If missing, install the Xcode developer tools:\n' >&2
 		printf 'xcode-select --install\n' >&2
 		return 1
 	fi
 
 	if ! command -v bc &> /dev/null; then
-		printf '❌ Erreur: La commande '\''bc'\'' n'\''est pas installée.\n' >&2
+		printf '❌ Error: '\''bc'\'' is not installed.\n' >&2
 		if [[ "$os" == "macos" ]]; then
-			printf 'Pour l'\''installer sur macOS, utilisez:\n' >&2
+			printf 'To install on macOS, run:\n' >&2
 			printf 'brew install bc\n' >&2
 		else
-			printf 'Pour l'\''installer sur Linux, utilisez:\n' >&2
+			printf 'To install on Linux, run:\n' >&2
 			printf 'apt update && apt install bc\n' >&2
-			printf 'ou sur RedHat/CentOS:\n' >&2
+			printf 'or on RedHat/CentOS:\n' >&2
 			printf 'yum install bc\n' >&2
 		fi
 		return 1
@@ -65,9 +65,9 @@ _linac_check_commands() {
 	return 0
 }
 
-# Comptage du nombre total d'utilisateurs actifs
+# Count total enabled users
 _linac_count_users() {
-	printf '🔍 Exécution de la commande ldapsearch pour compter les utilisateurs:\n' >&2
+	printf '🔍 Running ldapsearch to count users:\n' >&2
 	printf 'ldapsearch -x -H "ldap://%s" -D "%s" -w "%s" -b "%s" '\''(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))'\'' sAMAccountName | grep -c "^sAMAccountName:"\n' \
 		"${config[dc_ip]}" "${config[user_dn]}" "${config[password]}" "${config[base_dn]}" >&2
 	printf '\n' >&2
@@ -80,11 +80,11 @@ _linac_count_users() {
 		sAMAccountName | grep -c '^sAMAccountName:'
 }
 
-# Génération des données LDAP avec traitement AWK
+# Generate LDAP data (AWK processing)
 _linac_generate_data() {
 	local local_threshold_days="$1"
 
-	printf '🔍 Exécution de la commande ldapsearch pour générer les données:\n' >&2
+	printf '🔍 Running ldapsearch to fetch user data:\n' >&2
 	printf 'ldapsearch -x -H "ldap://%s" -D "%s" -w "%s" -b "%s" '\''(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))'\'' sAMAccountName description lastLogon lastLogonTimestamp physicalDeliveryOfficeName manager typeContrat division badPwdCount badPasswordTime logonCount displayName department\n' \
 		"${config[dc_ip]}" "${config[user_dn]}" "${config[password]}" "${config[base_dn]}" >&2
 	printf '\n' >&2
@@ -118,37 +118,37 @@ _linac_generate_data() {
 		$1 == "department" { department = $2 }
 
 		$1 == "" {
-			# Calcul des jours depuis dernière connexion avec logique améliorée
+			# Compute days since last logon (improved logic)
 			epoch_ll = int(ll / 10000000 - 11644473600)
 			epoch_llt = int(llt / 10000000 - 11644473600)
 
-			# Calcul des jours pour chaque timestamp
+			# Days for each timestamp
 			days_ll = (epoch_ll > 0) ? int((now - epoch_ll) / 86400) : -1
 			days_llt = (epoch_llt > 0) ? int((now - epoch_llt) / 86400) : -1
 
-			# Sélection du meilleur timestamp selon la logique demandée
+			# Pick the most recent valid timestamp
 			if (days_ll >= 0 && days_llt >= 0) {
-				# Les deux sont valides, prendre le plus récent (plus petit nombre de jours)
+				# Both valid: take the most recent (smallest day count)
 				days = (days_ll < days_llt) ? days_ll : days_llt
 			} else if (days_ll >= 0) {
-				# Seul lastLogon est valide
+				# Only lastLogon is valid
 				days = days_ll
 			} else if (days_llt >= 0) {
-				# Seul lastLogonTimestamp est valide
+				# Only lastLogonTimestamp is valid
 				days = days_llt
 			} else {
-				# Aucun timestamp valide
+				# No valid timestamp
 				days = -1
 			}
 
 			if (days > threshold) {
-				# Extraction du nom du manager depuis le CN
+				# Extract manager name from CN
 				managerName = "N/A"
 				if (manager && match(manager, /CN=([^,]+)/)) {
 					managerName = substr(manager, RSTART+3, RLENGTH-3)
 				}
 
-				# Traitement de badPasswordTime (conversion depuis timestamp Windows)
+				# Convert badPasswordTime (Windows timestamp)
 				badPasswordTimeDays = 0
 				if (badPasswordTime > 0) {
 					epoch_bpt = int(badPasswordTime / 10000000 - 11644473600)
@@ -157,7 +157,7 @@ _linac_generate_data() {
 					}
 				}
 
-				# Utilisation de N/A pour les champs vides
+				# Use N/A for empty fields
 				final_siteGeo = (siteGeo ? siteGeo : "N/A")
 				final_typeContrat = (typeContrat ? typeContrat : "N/A")
 				final_division = (division ? division : "N/A")
@@ -180,7 +180,7 @@ _linac_generate_data() {
 					  final_department
 			}
 
-			# Reset des variables
+			# Reset variables
 			user = ""; desc = ""; ll = 0; llt = 0
 			siteGeo = ""; manager = ""; typeContrat = ""; division = ""
 			badPwdCount = 0; badPasswordTime = 0; logonCount = ""
@@ -189,23 +189,23 @@ _linac_generate_data() {
 	' | sort -t $'\t' -k2 -nr
 }
 
-# Affichage formaté des résultats dans le terminal
+# Pretty-print results to the terminal
 _linac_display_results() {
 	local local_threshold_days="$1"
 	local local_temp_results="$2"
 
-	printf '\n📊 UTILISATEURS ENABLED INACTIFS (> %s jours)\n' "$local_threshold_days" >&2
+	printf '\n📊 INACTIVE ENABLED USERS (> %s days)\n' "$local_threshold_days" >&2
 	printf '=======================================================\n' >&2
 
 	if [[ -n $local_temp_results ]]; then
-		# Header pour l'affichage terminal
+		# Terminal table header
 		printf '\n' >&2
 		printf '%-20s %-6s %-4s %-8s %-25s %-20s %-12s %-15s %-10s %-15s %-6s %-15s\n' \
-			'UTILISATEUR' 'JOURS' 'PWD' 'ECHEC' 'NOM COMPLET' 'MANAGER' 'CONTRAT' 'DESCRIPTION' 'SITE' 'DIVISION' 'LOGIN' 'DEPT' >&2
+			'USER' 'DAYS' 'PWD' 'FAILS' 'FULL NAME' 'MANAGER' 'CONTRACT' 'DESCRIPTION' 'SITE' 'DIVISION' 'LOGON' 'DEPT' >&2
 		printf '%.0s-' {1..200} >&2
 		printf '\n' >&2
 
-		# Données formatées pour le terminal
+		# Formatted rows for the terminal
 		while IFS=$'\t' read -r local_user local_days local_badPwd local_badTime local_displayName local_manager local_contract local_desc local_site local_division local_loginCount local_dept; do
 			printf '%-20s %-6s %-4s %-8s %-35s %-20s %-12s %-25s %-10s %-25s %-6s %-25s\n' \
 				"${local_user:0:20}" \
@@ -222,11 +222,11 @@ _linac_display_results() {
 				"${local_dept:0:25}" >&2
 		done <<< "$local_temp_results"
 	else
-		printf '✅ Aucun utilisateur enabled inactif trouvé avec le seuil de %s jours\n' "$local_threshold_days" >&2
+		printf '✅ No inactive enabled users found above %s days\n' "$local_threshold_days" >&2
 	fi
 }
 
-# Copie vers le presse-papier (macOS sans fichier) ou sauvegarde fichier et affichage des statistiques
+# Copy to clipboard (macOS, no file) or save to file, then print stats
 _linac_copy_and_stats() {
 	local local_os="$1"
 	local local_threshold_days="$2"
@@ -238,33 +238,33 @@ _linac_copy_and_stats() {
 		local local_user_count
 		local_user_count=$(printf '%s\n' "$local_temp_results" | wc -l | tr -d ' ')
 
-		# Calcul du pourcentage
+		# Percentage
 		local local_percentage=0
 		if ((local_total_enabled_users > 0)); then
 			local_percentage=$(printf 'scale=2; (%s * 100) / %s\n' "$local_user_count" "$local_total_enabled_users" | bc -l 2>/dev/null || printf '0')
 		fi
 
-		# Génération TSV avec header
+		# Build TSV with header
 		local tsv_content
 		tsv_content=$(printf 'sAMAccountName\tNombreDeJoursDerniereCon\tbadPwdCount\tbadPasswordTime\tdisplayName\tManagerName\tTypeContrat\tDescription\tSiteGeo\tDivision\tlogonCount\tdepartment\n%s\n' "$local_temp_results")
 
 		if [[ -n "$local_output_file" ]]; then
-			# Sauvegarde dans un fichier (macOS avec 2 args ou Linux)
+			# Save to file (macOS w/ 2 args, or Linux)
 			printf '%s' "$tsv_content" > "$local_output_file"
-			printf '\n✅ Résultats sauvegardés dans le fichier: %s (format TSV)\n' "$local_output_file" >&2
+			printf '\n✅ Results saved to file: %s (TSV)\n' "$local_output_file" >&2
 		elif [[ "$local_os" == "macos" ]]; then
-			# Copie vers le presse-papier sur macOS (1 arg seulement)
+			# Copy to clipboard on macOS (1 arg)
 			printf '%s' "$tsv_content" | pbcopy
-			printf '\n✅ Résultats copiés dans le presse-papier macOS (format TSV)\n' >&2
+			printf '\n✅ Results copied to macOS clipboard (TSV)\n' >&2
 		fi
 
-		printf '📊 Statistiques:\n' >&2
+		printf '📊 Statistics:\n' >&2
 		printf '==========================================================\n' >&2
-		printf '%-40s | %-10s\n' 'Statistique' 'Valeur' >&2
+		printf '%-40s | %-10s\n' 'Statistic' 'Value' >&2
 		printf -- '----------------------------------------------------------\n' >&2
-		printf '%-40s | %-10s\n' "Utilisateurs enabled inactifs depuis $local_threshold_days j" "$local_user_count" >&2
-		printf '%-40s | %-10s\n' 'Utilisateurs enabled total' "$local_total_enabled_users" >&2
-		printf '%-40s | %-10s\n' "Pourcentage d'inactifs depuis $local_threshold_days j" "${local_percentage}%" >&2
+		printf '%-40s | %-10s\n' "Inactive enabled users (> $local_threshold_days d)" "$local_user_count" >&2
+		printf '%-40s | %-10s\n' 'Total enabled users' "$local_total_enabled_users" >&2
+		printf '%-40s | %-10s\n' "Inactive percentage (> $local_threshold_days d)" "${local_percentage}%" >&2
 		printf '==========================================================\n' >&2
 	fi
 }
@@ -272,51 +272,51 @@ _linac_copy_and_stats() {
 _linac_show_usage() {
 	local os="$1"
 	
-	printf 'Usage: linac <jours_seuil> [fichier_sortie.tsv] | linac env\n' >&2
+	printf 'Usage: linac <threshold_days> [output.tsv] | linac env\n' >&2
 	printf '\n' >&2
 	printf 'Exemples:\n' >&2
 	if [[ "$os" == "macos" ]]; then
-		printf '  linac 90                     - Rechercher les utilisateurs inactifs depuis 90 jours (copie vers presse-papier)\n' >&2
-		printf '  linac 90 /tmp/inactifs.tsv  - Rechercher les utilisateurs inactifs depuis 90 jours (sauvegarde fichier)\n' >&2
+		printf '  linac 90                     - Find users inactive for 90+ days (copy to clipboard)\n' >&2
+		printf '  linac 90 /tmp/inactifs.tsv  - Find users inactive for 90+ days (save to file)\n' >&2
 	else
-		printf '  linac 90 /tmp/inactifs.tsv  - Rechercher les utilisateurs inactifs depuis 90 jours (sauvegarde fichier)\n' >&2
+		printf '  linac 90 /tmp/inactifs.tsv  - Find users inactive for 90+ days (save to file)\n' >&2
 	fi
-	printf '  linac env                    - Éditer le fichier de configuration\n' >&2
+	printf '  linac env                    - Edit the configuration file\n' >&2
 }
 
 _linac_show_env() {
-	printf '=== Configuration LDAP ===\n' >&2
-	printf '%-25s: %s\n' 'OS détecté' "$detected_os" >&2
+	printf '=== LDAP Configuration ===\n' >&2
+	printf '%-25s: %s\n' 'OS detected' "$detected_os" >&2
 	printf '%-25s: %s\n' 'DC IP' "${config[dc_ip]}" >&2
 	printf '%-25s: %s\n' 'Base DN' "${config[base_dn]}" >&2
 	printf '%-25s: %s\n' 'User DN' "${config[user_dn]}" >&2
-	printf '%-25s: %s jours\n' 'Seuil' "$threshold_days" >&2
-	printf '%-25s: %s\n' 'Date actuelle' "$(date)" >&2
+	printf '%-25s: %s days\n' 'Threshold' "$threshold_days" >&2
+	printf '%-25s: %s\n' 'Current date' "$(date)" >&2
 	printf '=========================\n' >&2
 }
 
-# Édition du fichier de configuration environnement
+# Edit the environment config file
 _linac_edit_env() {
 	local env_file="$1"
 	
-	# Créer le fichier s'il n'existe pas ou est vide avec un template
+	# Create the file with a template if missing/empty
 	if [[ ! -f "$env_file" || ! -s "$env_file" ]]; then
 		cat > "$env_file" <<EOF
-# Configuration LDAP pour linac
-export DOMAIN='siege.amazon.com'
-export USER='p.nom'
-export BASE_DN='DC=SIEGE,DC=AMAZON,DC=COM'
-export DN="OU=DSI,OU=SUPERMEGASUPERADMIN,OU=PANAMA,OU=AMAZON.COM,OU=GROUPE AMAZON.COM,\${BASE_DN}"
-export PASSWORD='aaaaaaas'
-export DC_IP='172.131.0.99'
+# LDAP configuration for linac
+export DOMAIN='corp.example.com'
+export USER='svc.linac'
+export BASE_DN='DC=corp,DC=example,DC=com'
+export DN="OU=Service Accounts,\${BASE_DN}"
+export PASSWORD='<redacted>'
+export DC_IP='198.51.100.10'
 
-# Pour charger: source "$env_file"
+# To load: source "$env_file"
 EOF
 		chmod 600 "$env_file"
-		printf 'Fichier créé : %s\n' "$env_file" >&2
+		printf 'File created: %s\n' "$env_file" >&2
 	fi
 	
-	# Choisir l'éditeur
+	# Pick an editor
 	local editor="$EDITOR"
 	[[ -z "$editor" ]] && command -v code &>/dev/null && editor='code'
 	[[ -z "$editor" ]] && command -v nano &>/dev/null && editor='nano'
@@ -325,35 +325,35 @@ EOF
 	"$editor" "$env_file"
 }
 
-# Affichage des instructions pour Excel/OnlyOffice
+# Spreadsheet import instructions
 _linac_show_instructions() {
 	local os="$1"
 	local output_file="$2"
 	
-	printf '\n📋 Instructions pour tableur:\n' >&2
+	printf '\n📋 Spreadsheet import:\n' >&2
 	
 	if [[ -n "$output_file" ]]; then
-		# Mode fichier (macOS avec 2 args ou Linux)
+		# File mode
 		if [[ "$os" == "macos" ]]; then
-			printf '1. Ouvrez Excel et créez un nouveau document\n' >&2
-			printf '2. Ouvrez le fichier: %s\n' "$output_file" >&2
+			printf '1. Open Excel and create a new document\n' >&2
+			printf '2. Open the file: %s\n' "$output_file" >&2
 		else
-			printf '1. Ouvrez OnlyOffice Calc ou Excel\n' >&2
-			printf '2. Ouvrez le fichier: %s\n' "$output_file" >&2
+			printf '1. Open OnlyOffice Calc or Excel\n' >&2
+			printf '2. Open the file: %s\n' "$output_file" >&2
 		fi
-		printf '3. Sélectionnez toutes les données\n' >&2
-		printf '4. Convertir en tableau formaté avec des filtres\n' >&2
+		printf '3. Select all the data\n' >&2
+		printf '4. Convert to a formatted table with filters\n' >&2
 	elif [[ "$os" == "macos" ]]; then
-		# Mode presse-papier (macOS avec 1 arg)
-		printf '1. Ouvrez Excel et créez un nouveau document\n' >&2
-		printf '2. Collez les données (Cmd+V)\n' >&2
-		printf '3. Sélectionnez toutes les données collées\n' >&2
-		printf '4. Convertir en tableau formaté (Insertion > Tableau)\n' >&2
-		printf '5. Le tableau sera automatiquement formaté avec des filtres\n' >&2
+		# Clipboard mode (macOS, 1 arg)
+		printf '1. Open Excel and create a new document\n' >&2
+		printf '2. Paste the data (Cmd+V)\n' >&2
+		printf '3. Select all pasted data\n' >&2
+		printf '4. Convert to a formatted table (Insert > Table)\n' >&2
+		printf '5. The table is auto-formatted with filters\n' >&2
 	fi
 }
 
-# Fonction principale refactorisée
+# Main function
 linac() {
 	local detected_os
 	detected_os=$(_linac_detect_os)
@@ -363,22 +363,22 @@ linac() {
 	
 	if [[ ! -d "$config_dir" ]]; then
 		mkdir -p "$config_dir" || {
-			printf 'Erreur: Impossible de créer le répertoire %s\n' "$config_dir" >&2
+			printf 'Error: cannot create directory %s\n' "$config_dir" >&2
 			return 1
 		}
-		printf 'Répertoire créé : %s\n' "$config_dir" >&2
+		printf 'Directory created: %s\n' "$config_dir" >&2
 	fi
 
-	# Gestion de l'argument "env" (sur les deux plateformes)
+	# Handle the "env" argument (both platforms)
 	if [[ $# -eq 1 && "$1" == "env" ]]; then
 		_linac_edit_env "$config_file"
 		_linac_show_usage "$detected_os"
 		return 0
 	fi
 
-	# Validation des arguments selon l'OS
+	# Validate arguments per OS
 	if [[ "$detected_os" == "macos" ]]; then
-		# macOS accepte 1 ou 2 arguments
+		# macOS accepts 1 or 2 arguments
 		if [[ $# -eq 1 ]]; then
 			local threshold_days="$1"
 			local output_file=""
@@ -390,7 +390,7 @@ linac() {
 			return 1
 		fi
 	else
-		# Linux - besoin de 2 arguments obligatoires
+		# Linux: 2 mandatory arguments
 		if [[ $# -ne 2 ]]; then
 			_linac_show_usage "$detected_os"
 			return 1
@@ -399,63 +399,63 @@ linac() {
 		local output_file="$2"
 	fi
 
-	# Validation que l'argument threshold_days est un nombre
+	# Validate threshold_days is numeric
 	if ! [[ $threshold_days =~ ^[0-9]+$ ]]; then
-		printf 'Erreur: Le seuil doit être un nombre entier positif\n' >&2
+		printf 'Error: threshold must be a positive integer\n' >&2
 		_linac_show_usage "$detected_os"
 		return 1
 	fi
 
-	# Validation du fichier de sortie si spécifié
+	# Validate output file if provided
 	if [[ -n "$output_file" ]]; then
 		local output_dir
 		output_dir=$(dirname "$output_file")
 		if [[ ! -d "$output_dir" ]]; then
-			printf 'Erreur: Le répertoire %s n'\''existe pas\n' "$output_dir" >&2
+			printf 'Error: directory %s does not exist\n' "$output_dir" >&2
 			return 1
 		fi
 		if [[ ! "$output_file" =~ \.tsv$ ]]; then
-			printf 'Avertissement: Le fichier de sortie ne se termine pas par .tsv\n' >&2
+			printf 'Warning: output file does not end with .tsv\n' >&2
 		fi
 	fi
 
-	# Configuration LDAP (maintenant globale pour éviter local -n)
+	# LDAP configuration (global to avoid local -n)
 	if [[ ! -f "$config_file" ]]; then
-		printf 'Erreur: Fichier de configuration non trouvé: %s\n' "$config_file" >&2
-		printf 'Utilisez: linac env pour créer le fichier de configuration\n' >&2
+		printf 'Error: configuration file not found: %s\n' "$config_file" >&2
+		printf 'Run: linac env to create the configuration file\n' >&2
 		return 1
 	fi
 	
 	source "$config_file"
 	declare -A config
 	config[dc_ip]="${DC_IP:-172.24.0.4}"
-	config[password]="${PASSWORD:-my-fucking-strong-password}"
-	config[base_dn]="${BASE_DN:-DC=SIEGE,DC=AMAZON,DC=COM}"
+	config[password]="${PASSWORD:-changeme}"
+	config[base_dn]="${BASE_DN:-DC=corp,DC=example,DC=com}"
 	config[user_dn]="$DN"
 	config[now]=$(date +%s)
 	
 	_linac_show_env
 
-	# Vérification des commandes nécessaires
+	# Check required commands
 	_linac_check_commands "$detected_os" || return 1
 
-	# Comptage des utilisateurs actifs
+	# Count enabled users
 	local total_enabled_users
 	total_enabled_users=$(_linac_count_users)
 
-	# Mise à jour de l'affichage config avec le nombre d'utilisateurs
-	printf '%-25s: %s\n' 'Utilisateurs actifs' "$total_enabled_users" >&2
+	# Update config display with user count
+	printf '%-25s: %s\n' 'Enabled users' "$total_enabled_users" >&2
 
-	# Génération des données
+	# Generate data
 	local temp_results
 	temp_results=$(_linac_generate_data "$threshold_days")
 
-	# Affichage des résultats
+	# Display results
 	_linac_display_results "$threshold_days" "$temp_results"
 
-	# Copie/sauvegarde et statistiques
+	# Copy/save and statistics
 	_linac_copy_and_stats "$detected_os" "$threshold_days" "$temp_results" "$total_enabled_users" "$output_file"
 
-	# Instructions tableur
+	# Spreadsheet instructions
 	_linac_show_instructions "$detected_os" "$output_file"
 }

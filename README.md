@@ -1,110 +1,100 @@
-# LINAC - LDAP Inactive Accounts
+# LINAC — LDAP Inactive Accounts
 
-## Description
-Outil en ligne de commande pour identifier les comptes utilisateurs inactifs dans un Active Directory via LDAP.
+> CLI to flag inactive Active Directory accounts over LDAP — account hygiene
+> and attack-surface reduction. Pure Bash, no dependency beyond `ldapsearch`.
 
-## Prérequis
-- `ldapsearch` (OpenLDAP)
-- `pbcopy` (macOS)
-- `bc` (calculatrice)
+Stale AD accounts are dead weight **and** an attack surface: orphaned service
+accounts, departed employees, forgotten admins. `linac` lists them in one
+command, computes a real last-logon (reconciling `lastLogon` and
+`lastLogonTimestamp`), shows attack-surface stats, and exports a clean TSV.
+
+## Demo
+
+```console
+$ linac env          # one-time: creates/edits ~/.config/linac/.linac.env
+$ linac 90           # accounts inactive for 90+ days
+
+=== LDAP Configuration ===
+OS detected              : linux
+DC IP                    : 198.51.100.10
+Base DN                  : DC=corp,DC=example,DC=com
+User DN                  : CN=svc.linac,OU=Service Accounts,DC=corp,DC=example,DC=com
+Threshold                : 90 days
+=========================
+Enabled users            : 1428
+
+📊 INACTIVE ENABLED USERS (> 90 days)
+=======================================================
+USER                 DAYS   PWD  FAILS  FULL NAME          SITE       DEPT
+------------------------------------------------------------------------------
+svc.backup-legacy    612    0    0      Service Backup     Paris      IT
+old.admin            488    3    151    Legacy Admin       Lyon       IT
+j.martin             274    0    0      Julien Martin      Nantes     Finance
+intern-2024          203    1    44     Summer Intern 2024 Paris      Marketing
+p.durand             142    0    0      Pauline Durand     Lyon       HR
+   … (the exported TSV contains 12 columns: account, days, badPwdCount,
+      badPasswordTime, displayName, manager, contract, description, site,
+      division, logonCount, department)
+
+📊 Statistics:
+==========================================================
+Statistic                                | Value
+----------------------------------------------------------
+Inactive enabled users (> 90 d)          | 214
+Total enabled users                      | 1428
+Inactive percentage (> 90 d)             | 14.98%
+==========================================================
+
+✅ Results copied to clipboard (TSV) — ready for Excel
+```
+
+> Data above is **synthetic**. `linac` only reads from the AD you configure.
+
+## What it does
+- Binds to AD over LDAP and lists **enabled** accounts inactive past a threshold
+- Reconciles `lastLogon` **and** `lastLogonTimestamp` for a reliable last-logon
+- Surfaces risk signals: `badPwdCount`, failed-auth age, logon count, manager
+- Exports an Excel-ready **TSV** (clipboard on macOS, file anywhere)
+- Inactivity stats: count and percentage of the enabled population
+
+## Requirements
+- `ldapsearch` (OpenLDAP) · `bc` · `pbcopy` (clipboard export, macOS only)
 
 ```bash
-# Installation macOS
+# macOS
 brew install openldap bc
-# ou
-apt update && apt install openldap bc
-# ou 
-sudo apt update && sudo apt install openldap bc
+# Debian / Ubuntu
+sudo apt update && sudo apt install ldap-utils bc
 ```
 
-## Installation
-
-### 📦 Installation locale (macOS)
-
+## Install
 ```bash
-DIR=$(mktemp -d)
-cd "$DIR"
-git clone https://github.com/username/linac.git
-cd linac
+git clone https://github.com/r648r/linac.git && cd linac
 source linac.sh
-
-# Ajouter à votre profil pour un chargement automatique
-echo "source $DIR/linac/linac.sh" >> ~/.zshrc && source ~/.zshrc
-# ou
-echo "source $DIR/linac/linac.sh" >> ~/.bashrc && source ~/.bashrc
 ```
 
-## Configuration
+## Configure
 ```bash
-# Première utilisation : créer le fichier de configuration
-linac env
+linac env        # creates ~/.config/linac/.linac.env, then opens your $EDITOR
 ```
-Édite le fichier `~/.config/linac/.linac.env` avec vos paramètres LDAP :
-- `DOMAIN` : Domaine (ex: siege.amazon.com)
-- `USER` : Nom d'utilisateur (ex: p.nom)
-- `BASE_DN` : Base DN de recherche
-- `DN` : DN complet de l'utilisateur
-- `PASSWORD` : Mot de passe de connexion
-- `DC_IP` : Adresse IP du contrôleur de domaine
-
-### Exemple de configuration
 ```bash
-# Configuration LDAP pour linac
-export DOMAIN='siege.amazon.com'
-export USER='p.nom'
-export BASE_DN='DC=SIEGE,DC=AMAZON,DC=COM'
-export DN="OU=DSI,OU=SUPERMEGASUPERADMIN,OU=PANAMA,OU=AMAZON.COM,OU=GROUPE AMAZON.COM,${BASE_DN}"
-export PASSWORD='aaaaaaas'
-export DC_IP='172.131.0.99'
+# ~/.config/linac/.linac.env
+export DOMAIN='corp.example.com'
+export USER='svc.linac'
+export BASE_DN='DC=corp,DC=example,DC=com'
+export DN="CN=svc.linac,OU=Service Accounts,${BASE_DN}"
+export PASSWORD='<redacted>'
+export DC_IP='198.51.100.10'
 ```
 
-## Utilisation
+## Usage
 ```bash
-# Rechercher les utilisateurs inactifs depuis 99 jours
-linac 99
+linac 90                  # inactive 90+ days → clipboard (macOS)
+linac 90 /tmp/stale.tsv   # save to a TSV file (required on Linux)
+linac env                 # edit configuration
 ```
 
-## Fonctionnalités
-- ✅ Détection automatique des utilisateurs enabled/disabled
-- ✅ Calcul intelligent de la dernière connexion (lastLogon & lastLogonTimestamp)
-- ✅ Export TSV automatique vers le presse-papier (macOS only)
-- ✅ Statistiques détaillées (nombre, pourcentage)
-- ✅ Affichage formaté en tableau
-- ✅ Compatible Excel (collage direct du presse papier)
-
-## Données exportées
-- sAMAccountName 
-- description 
-- lastLogon 
-- lastLogonTimestamp
-- physicalDeliveryOfficeName 
-- manager 
-- typeContrat 
-- division
-- badPwdCount 
-- badPasswordTime 
-- logonCount 
-- displayName 
-- department
-
----
-
-## 🐳 Brouillon - Installation avec Docker
-```bash
-# Cloner le repository
-git clone https://github.com/username/linac.git
-cd linac
-
-# Construire l'image Docker
-docker build -t linac-image .
-
-# Lancer le conteneur
-docker run -d --name linac -it linac-image
-
-# Accéder au conteneur
-docker exec -it linac /bin/zsh
-
-# Dans le conteneur, linac est déjà disponible
-linac env  # Configuration
-linac 90   # Utilisation
-```
+## Exported fields
+`sAMAccountName`, `NombreDeJoursDerniereCon`, `badPwdCount`, `badPasswordTime`,
+`displayName`, `ManagerName`, `TypeContrat`, `Description`, `SiteGeo`,
+`Division`, `logonCount`, `department`
